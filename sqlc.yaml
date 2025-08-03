@@ -1,0 +1,16 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "./migrations"
+    queries: "./internal/store/postgres/query"
+    database:
+      uri: "${DATABASE_URL}"
+    rules:
+      - sqlc/db-prepare
+      - sqlc/unsafe-exec
+    gen:
+      go:
+        package: "postgres"
+        out: "./internal/store/postgres"
+        sql_package: "pgx/v5"
+        emit_interface: true

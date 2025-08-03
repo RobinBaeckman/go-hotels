@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gohotels
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: gohotels
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U gohotels"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://gohotels:secret@localhost:5432/gohotels?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install Task
+        uses: arduino/setup-task@v1
+
+      - name: Install migrate and sqlc
+        run: |
+          go install github.com/jackc/tern/cmd/tern@latest
+          go install github.com/kyleconroy/sqlc/cmd/sqlc@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..10}; do pg_isready -h localhost -U gohotels && break || sleep 1; done
+
+      - name: Run migrations
+        run: task migrate-up
+
+      - name: Generate DB code
+        run: task db-generate
+
+      - name: Run lint
+        run: task lint
+
+      - name: Run tests with coverage
+        run: task test

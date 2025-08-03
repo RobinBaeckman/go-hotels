@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: Hotel Booking API
+  version: 0.1.0
+  description: |
+    This API allows users to search for hotels, create bookings, and generate reports.
+    It is part of a backend architecture showcase project.
+
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /hotels:
+    get:
+      summary: List hotels
+      operationId: listHotels
+      tags:
+        - Hotel
+      parameters:
+        - $ref: '#/components/parameters/CityParam'
+        - $ref: '#/components/parameters/CheckInParam'
+        - $ref: '#/components/parameters/CheckOutParam'
+      responses:
+        '200':
+          description: A list of hotels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Hotel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      operationId: createHotel
+      summary: Create a new hotel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelInput'
+      responses:
+        '201':
+          description: Hotel created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hotel'
+        '400':
+          description: Invalid input
+        '500':
+          description: Server error
+
+components:
+  parameters:
+    CityParam:
+      name: city
+      in: query
+      required: true
+      schema:
+        type: string
+    CheckInParam:
+      name: checkin
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+    CheckOutParam:
+      name: checkout
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+
+  schemas:
+    Hotel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        city:
+          type: string
+        stars:
+          type: integer
+        price_per_night:
+          type: number
+          format: float
+        amenities:
+          type: array
+          items:
+            type: string
+    HotelInput:
+      type: object
+      required:
+        - name
+        - city
+        - stars
+        - price_per_night
+        - amenities
+      properties:
+        name:
+          type: string
+        city:
+          type: string
+        stars:
+          type: integer
+        price_per_night:
+          type: number
+          format: float
+        amenities:
+          type: array
+          items:
+            type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+

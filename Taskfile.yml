@@ -1,0 +1,106 @@
+version: "3"
+
+dotenv: [".env"]
+
+env:
+  DATABASE_URL: postgres://gohotels:secret@localhost:5432/gohotels?sslmode=disable
+
+tasks:
+  create-hotel:
+    desc: Create a hotel via API
+    cmds:
+      - |
+        http POST http://localhost:8080/hotels \
+        name="Test Hotel" \
+        city="Göteborg" \
+        stars:=4 \
+        price_per_night:=123.45 \
+        amenities:='["wifi", "breakfast"]'
+
+  list-hotels:
+    desc: List hotels in a specific city
+    cmds:
+      - http GET http://localhost:8080/hotels city==Göteborg
+
+  generate:
+    desc: Generate Go code from OpenAPI spec
+    cmds:
+      - go tool oapi-codegen -config api/oapi-codegen.cfg.yaml api/openapi.yaml
+    sources:
+      - api/openapi.yaml
+      - api/oapi-codegen.cfg.yaml
+    generates:
+      - api/openapi.gen.go
+
+  lint:
+    desc: Run static analysis with golangci-lint
+    cmds:
+      - go run tool github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+
+  tidy:
+    desc: Run go mod tidy
+    cmds:
+      - go mod tidy
+
+  test:
+    desc: Run unit tests with coverage
+    cmds:
+      - go test ./... -coverprofile=coverage.out
+      - go tool cover -func=coverage.out | grep total
+
+  run:
+    desc: Run the REST server
+    cmds:
+      - go run ./cmd/rest
+
+  build:
+    desc: Build the REST binary
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/api ./cmd/rest
+
+  ci:
+    desc: Run full CI pipeline (generate + lint + test)
+    deps: [generate, lint, test]
+
+  # ---------------------
+  # Database-related tasks
+  # ---------------------
+
+  migrate-create:
+    desc: Create a new migration file
+    cmds:
+      - |
+        if [ -z "{{.CLI_ARGS}}" ]; then
+          echo "❌ You must provide a name: task migrate-create -- create_hotels_table"
+          exit 1
+        fi
+        migrate create -ext sql -dir migrations -seq "{{.CLI_ARGS}}"
+
+  migrate-up:
+    desc: Apply all up migrations
+    cmds:
+      - migrate -database "$DATABASE_URL" -path migrations up
+
+  migrate-down:
+    desc: Roll back the last migration
+    cmds:
+      - migrate -database "$DATABASE_URL" -path migrations down 1
+
+  db-generate:
+    desc: Generate Go code from SQL files using sqlc
+    cmds:
+      - sqlc generate
+
+  db-init:
+    desc: Initialize database (migrate and generate code)
+    cmds:
+      - task: migrate-up
+      - task: db-generate
+
+  db-reset:
+    desc: Drop, reapply all migrations and regenerate SQL code
+    cmds:
+      - migrate -database "$DATABASE_URL" -path migrations drop -f
+      - task: migrate-up
+      - task: db-generate

@@ -5,3 +5,19 @@ internal/api/openapi.gen.go
 *.out
 
 vendor/
+
+# Coverage
+coverage.out
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+
+# Logs and temp
+*.log
+
+# Binaries
+bin/
+
+.task/

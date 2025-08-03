@@ -1,11 +1,27 @@
-version: "3"
+version: "3.44.1"
 
 dotenv: [".env"]
 
 env:
   DATABASE_URL: postgres://gohotels:secret@localhost:5432/gohotels?sslmode=disable
 
+vars:
+  IMAGE_NAME: ghcr.io/{{.GHCR_USER | lower}}/go-hotels
+  IMAGE_TAG: '{{.GITHUB_SHA | default "dev"}}'
+
 tasks:
+  fmt:
+    desc: Format code (fix issues)
+    cmds:
+      - go fmt ./...
+      - go tool goimports -w .
+
+  fmt-check:
+    desc: Fail if code is not formatted
+    cmds:
+      - test -z "$(go fmt ./...)"
+      - test -z "$(go tool goimports -l .)"
+
   create-hotel:
     desc: Create a hotel via API
     cmds:
@@ -35,18 +51,24 @@ tasks:
   lint:
     desc: Run static analysis with golangci-lint
     cmds:
-      - go run tool github.com/golangci/golangci-lint/cmd/golangci-lint run ./...
+      - go tool golangci-lint run ./...
 
   tidy:
     desc: Run go mod tidy
     cmds:
-      - go mod tidy
+      - git diff --exit-code go.mod go.sum || (echo "❌ go.mod or go.sum are not tidy. Run 'go mod tidy' and commit the changes." && exit 1)
+
 
   test:
-    desc: Run unit tests with coverage
+    desc: Run unit tests and generate coverage profile
     cmds:
-      - go test ./... -coverprofile=coverage.out
-      - go tool cover -func=coverage.out | grep total
+      - go test ./...
+
+  coverage:
+    desc: Check code coverage threshold and per-directory stats 
+    cmds:
+      - go test -coverprofile=coverage.out -covermode=set ./... > /dev/null
+      - ./scripts/coverage-check.sh
 
   run:
     desc: Run the REST server
@@ -90,7 +112,7 @@ tasks:
   db-generate:
     desc: Generate Go code from SQL files using sqlc
     cmds:
-      - sqlc generate
+      - go tool sqlc generate
 
   db-init:
     desc: Initialize database (migrate and generate code)
@@ -104,3 +126,26 @@ tasks:
       - migrate -database "$DATABASE_URL" -path migrations drop -f
       - task: migrate-up
       - task: db-generate
+
+  build-image:
+    desc: Build Docker image for go-hotels
+    cmds:
+      - docker build -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} -t {{.IMAGE_NAME}}:latest .
+
+  security:
+    desc: Local scans (gosec, govulncheck, gitleaks)
+    deps: [build-image]
+    cmds:
+      - go tool gosec ./...
+      - go tool govulncheck ./...
+      - docker run --rm -v $PWD:/repo zricethezav/gitleaks detect --source=/repo
+
+  push-image:
+    desc: Push Docker image to GHCR
+    vars:
+      IMAGE_NAME: ghcr.io/{{.GHCR_USER | lower}}/go-hotels
+      IMAGE_TAG: '{{.GITHUB_SHA | default "dev"}}'
+    cmds:
+      - echo $GHCR_PAT | docker login ghcr.io -u "{{.GHCR_USER | lower}}" --password-stdin
+      - docker push {{.IMAGE_NAME}}:{{.IMAGE_TAG}}
+      - docker push {{.IMAGE_NAME}}:latest

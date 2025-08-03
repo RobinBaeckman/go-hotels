@@ -33,5 +33,7 @@ func (h *Handler) CreateHotel(w http.ResponseWriter, r *http.Request) {
 
 	response := hotel.ToOpenAPI(*hDomain)
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "error encoding", http.StatusInternalServerError)
+	}
 }

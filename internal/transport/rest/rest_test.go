@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -88,7 +89,12 @@ func TestCreateHotel(t *testing.T) {
 			h.CreateHotel(rec, req)
 
 			resp := rec.Result()
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					// valfritt: logga, returnera, ignorera med kommentar
+					fmt.Println("failed to close response body:", err)
+				}
+			}()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Fatalf("unexpected status code: got %d, want %d", resp.StatusCode, tt.wantStatusCode)
@@ -156,7 +162,12 @@ func TestListHotels(t *testing.T) {
 			h.ListHotels(rec, req, api.ListHotelsParams{City: "Test City"})
 
 			resp := rec.Result()
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					// valfritt: logga, returnera, ignorera med kommentar
+					fmt.Println("failed to close response body:", err)
+				}
+			}()
 
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Fatalf("unexpected status code: got %d, want %d", resp.StatusCode, tt.wantStatusCode)

@@ -1,0 +1,10 @@
+.git
+.gitignore
+Dockerfile
+.dockerignore
+coverage.out
+*.md
+*.log
+*.tmp
+*.env
+migrations

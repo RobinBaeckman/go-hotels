@@ -1,0 +1,6 @@
+internal/store/postgres/db.go
+internal/store/postgres/hotel.sql.go
+internal/store/postgres/models.go
+internal/store/postgres/querier.go
+api/openapi.gen.go
+cmd/rest/main.go

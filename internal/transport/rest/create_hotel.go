@@ -13,7 +13,7 @@ func (h *Handler) CreateHotel(w http.ResponseWriter, r *http.Request) {
 
 	var input api.HotelInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
@@ -27,13 +27,14 @@ func (h *Handler) CreateHotel(w http.ResponseWriter, r *http.Request) {
 
 	hDomain, err := h.svc.RegisterHotel(ctx, hotelInput)
 	if err != nil {
-		http.Error(w, "could not create hotel", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "could not create hotel")
 		return
 	}
 
 	response := hotel.ToOpenAPI(*hDomain)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "error encoding", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "could not create hotel")
 	}
 }

@@ -81,7 +81,7 @@ func TestCreateHotel(t *testing.T) {
 					return tt.mockResponse, tt.mockErr
 				},
 			}
-			h := rest.NewHandler(mockSvc)
+			h := rest.NewHandler(mockSvc, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/hotels", bytes.NewBufferString(tt.input))
 			rec := httptest.NewRecorder()
@@ -154,7 +154,7 @@ func TestListHotels(t *testing.T) {
 					return tt.mockResponse, tt.mockErr
 				},
 			}
-			h := rest.NewHandler(mockSvc)
+			h := rest.NewHandler(mockSvc, nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/hotels?city=Test%20City", nil)
 			rec := httptest.NewRecorder()

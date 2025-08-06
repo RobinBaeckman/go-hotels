@@ -10,6 +10,53 @@ servers:
   - url: http://localhost:8080
 
 paths:
+  /health:
+    get:
+      summary: Liveness check
+      description: Returns OK if the API process is running.
+      responses:
+        '200':
+          description: Service is live
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /ready:
+    get:
+      summary: Readiness check
+      description: Checks if all required dependencies (e.g., database) are healthy.
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  db:
+                    type: string
+                    example: ok
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+                  db:
+                    type: string
+                    example: "connection failed"
   /hotels:
     get:
       summary: List hotels

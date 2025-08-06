@@ -12,7 +12,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
+
 	"github.com/robinbaeckman/go-hotels/api"
+	"github.com/robinbaeckman/go-hotels/internal/config"
 	"github.com/robinbaeckman/go-hotels/internal/hotel"
 	"github.com/robinbaeckman/go-hotels/internal/store"
 	pg "github.com/robinbaeckman/go-hotels/internal/store/postgres"
@@ -26,7 +28,10 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	// Load OpenAPI
+	// Load configuration
+	cfg := config.Load()
+
+	// Load OpenAPI spec
 	swagger, err := api.GetSwagger()
 	if err != nil {
 		slog.Error("failed to load OpenAPI spec", "err", err)
@@ -38,9 +43,9 @@ func main() {
 	router := chi.NewRouter()
 	router.Use(middleware.OapiRequestValidator(swagger))
 
-	// Connect to DB
+	// Connect to DB for the app itself
 	ctx := context.Background()
-	pool, err := pg.Connect(ctx)
+	pool, err := pg.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
 		os.Exit(1)
@@ -50,23 +55,23 @@ func main() {
 		pool.Close()
 	}()
 
-	// Init app
+	// Init app services
 	q := pg.New(pool)
 	st := store.NewPostgresStore(q)
 	svc := hotel.NewService(st)
-	handler := rest.NewHandler(svc)
+	handler := rest.NewHandler(svc, pool)
 	api.HandlerFromMux(handler, router)
 
-	// Create server with timeouts
+	// HTTP server
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              ":" + cfg.Port,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
 
-	// Signal context
+	// Signal handling
 	ctxShutdown, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -78,7 +83,6 @@ func main() {
 		}
 	}()
 
-	// Wait for signal
 	<-ctxShutdown.Done()
 	slog.Warn("shutdown signal received")
 

@@ -21,3 +21,5 @@ coverage.out
 bin/
 
 .task/
+
+.env.local

@@ -1,15 +1,33 @@
 version: "3.44.1"
 
-dotenv: [".env"]
-
-env:
-  DATABASE_URL: postgres://gohotels:secret@localhost:5432/gohotels?sslmode=disable
+dotenv:
+  - ".env"
+  - ".env.local"
 
 vars:
+  GHCR_USER: robinbaeckman
   IMAGE_NAME: ghcr.io/{{.GHCR_USER | lower}}/go-hotels
   IMAGE_TAG: '{{.GITHUB_SHA | default "dev"}}'
 
 tasks:
+  generate:
+    desc: Generate Go code from OpenAPI spec
+    cmds:
+      - go tool oapi-codegen -config api/oapi-codegen.cfg.yaml api/openapi.yaml
+    sources:
+      - api/openapi.yaml
+      - api/oapi-codegen.cfg.yaml
+    generates:
+      - api/openapi.gen.go
+
+  run:
+    desc: Run the REST server
+    cmds:
+      - go run ./cmd/rest
+
+  # ---------------------
+  # Code Quality
+  # ---------------------
   fmt:
     desc: Format code (fix issues)
     cmds:
@@ -22,32 +40,6 @@ tasks:
       - test -z "$(go fmt ./...)"
       - test -z "$(go tool goimports -l .)"
 
-  create-hotel:
-    desc: Create a hotel via API
-    cmds:
-      - |
-        http POST http://localhost:8080/hotels \
-        name="Test Hotel" \
-        city="Göteborg" \
-        stars:=4 \
-        price_per_night:=123.45 \
-        amenities:='["wifi", "breakfast"]'
-
-  list-hotels:
-    desc: List hotels in a specific city
-    cmds:
-      - http GET http://localhost:8080/hotels city==Göteborg
-
-  generate:
-    desc: Generate Go code from OpenAPI spec
-    cmds:
-      - go tool oapi-codegen -config api/oapi-codegen.cfg.yaml api/openapi.yaml
-    sources:
-      - api/openapi.yaml
-      - api/oapi-codegen.cfg.yaml
-    generates:
-      - api/openapi.gen.go
-
   lint:
     desc: Run static analysis with golangci-lint
     cmds:
@@ -58,37 +50,43 @@ tasks:
     cmds:
       - git diff --exit-code go.mod go.sum || (echo "❌ go.mod or go.sum are not tidy. Run 'go mod tidy' and commit the changes." && exit 1)
 
-
+  # ---------------------
+  # Testing
+  # ---------------------
   test:
-    desc: Run unit tests and generate coverage profile
+    desc: Run **unit tests** and generate coverage profile (excluding integration tests)
     cmds:
-      - go test ./...
+      - go test $(go list ./... | grep -v 'test/integration') -v
 
-  coverage:
-    desc: Check code coverage threshold and per-directory stats 
+  coverage-unit:
+    desc: Run unit tests with coverage (no integration tests)
     cmds:
-      - go test -coverprofile=coverage.out -covermode=set ./... > /dev/null
+      # - go test -coverprofile=coverage.out -covermode=set $(go list ./... | grep -v '/test/integration') > /dev/null
+      - go test -coverprofile=coverage.out -covermode=set $(go list ./... | grep -v '/test/integration')
       - ./scripts/coverage-check.sh
 
-  run:
-    desc: Run the REST server
+  integration-up:
+    desc: Start integration environment with Docker Compose
     cmds:
-      - go run ./cmd/rest
+      - if [ "$CI" = "true" ]; then docker compose -f docker-compose.base.yml -f docker-compose.integration.yml up -d; else DOCKER_BUILDKIT=1 docker compose -f docker-compose.base.yml -f docker-compose.integration.yml up -d --build; fi
 
-  build:
-    desc: Build the REST binary
+  integration-down:
+    desc: Stop integration environment and remove volumes
     cmds:
-      - mkdir -p bin
-      - go build -o bin/api ./cmd/rest
+      - docker compose -f docker-compose.base.yml -f docker-compose.integration.yml down -v
 
-  ci:
-    desc: Run full CI pipeline (generate + lint + test)
-    deps: [generate, lint, test]
+  integration-test:
+    desc: Run Go integration tests (works locally & in CI)
+    cmds:
+      - task integration-down
+      - task integration-up
+      - echo "🚀 Running Go integration tests"
+      - go test -tags=integration ./test/integration/... -v
+      - task integration-down
 
   # ---------------------
-  # Database-related tasks
+  # Database
   # ---------------------
-
   migrate-create:
     desc: Create a new migration file
     cmds:
@@ -127,10 +125,22 @@ tasks:
       - task: migrate-up
       - task: db-generate
 
-  build-image:
-    desc: Build Docker image for go-hotels
+  # ---------------------
+  # Docker & Security
+  # ---------------------
+  debug-api:
+    desc: Stop all containers, then start only DB for local API debugging
     cmds:
-      - docker build -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} -t {{.IMAGE_NAME}}:latest .
+      - echo "🛑 Stopping all containers..."
+      - docker compose -f docker-compose.base.yml -f docker-compose.integration.yml down -v || true
+      - echo "🐘 Starting only the database..."
+      - docker compose -f docker-compose.base.yml up -d db
+      - echo "✅ Database is ready. You can now start your API locally in debug mode."
+
+  build-image:
+    desc: Build Docker image for go-hotels with BuildKit
+    cmds:
+      - DOCKER_BUILDKIT=1 docker build -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} -t {{.IMAGE_NAME}}:latest .
 
   security:
     desc: Local scans (gosec, govulncheck, gitleaks)
@@ -142,10 +152,29 @@ tasks:
 
   push-image:
     desc: Push Docker image to GHCR
-    vars:
-      IMAGE_NAME: ghcr.io/{{.GHCR_USER | lower}}/go-hotels
-      IMAGE_TAG: '{{.GITHUB_SHA | default "dev"}}'
     cmds:
       - echo $GHCR_PAT | docker login ghcr.io -u "{{.GHCR_USER | lower}}" --password-stdin
       - docker push {{.IMAGE_NAME}}:{{.IMAGE_TAG}}
       - docker push {{.IMAGE_NAME}}:latest
+
+  local-ci:
+    desc: Run fast local CI (format check, lint, unit tests, integration tests, coverage)
+    cmds:
+      - task: fmt-check
+      - task: lint
+      - task: tidy
+      - task: test
+      - task: integration-test
+      - task: coverage-unit
+
+  kill-port-8080:
+    desc: Kill process on port 8080
+    cmds:
+      - |
+        PID=$(lsof -ti:8080)
+        if [ -n "$PID" ]; then
+          echo "Killing process on port 8080 (PID $PID)"
+          kill -9 $PID
+        else
+          echo "No process running on port 8080"
+        fi

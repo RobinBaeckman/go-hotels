@@ -1,20 +1,14 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: gohotels-postgres
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: gohotels
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: gohotels
-    volumes:
-      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "gohotels"]
       interval: 3s
       timeout: 3s
       retries: 5
-
-volumes:
-  db_data:

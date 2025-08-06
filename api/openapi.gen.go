@@ -67,17 +67,29 @@ type CreateHotelJSONRequestBody = HotelInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Liveness check
+	// (GET /health)
+	GetHealth(w http.ResponseWriter, r *http.Request)
 	// List hotels
 	// (GET /hotels)
 	ListHotels(w http.ResponseWriter, r *http.Request, params ListHotelsParams)
 	// Create a new hotel
 	// (POST /hotels)
 	CreateHotel(w http.ResponseWriter, r *http.Request)
+	// Readiness check
+	// (GET /ready)
+	GetReady(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// Liveness check
+// (GET /health)
+func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // List hotels
 // (GET /hotels)
@@ -91,6 +103,12 @@ func (_ Unimplemented) CreateHotel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Readiness check
+// (GET /ready)
+func (_ Unimplemented) GetReady(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ServerInterfaceWrapper converts contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler            ServerInterface
@@ -99,6 +117,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListHotels operation middleware
 func (siw *ServerInterfaceWrapper) ListHotels(w http.ResponseWriter, r *http.Request) {
@@ -155,6 +187,20 @@ func (siw *ServerInterfaceWrapper) CreateHotel(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateHotel(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetReady operation middleware
+func (siw *ServerInterfaceWrapper) GetReady(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReady(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -278,10 +324,16 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/health", wrapper.GetHealth)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/hotels", wrapper.ListHotels)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/hotels", wrapper.CreateHotel)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/ready", wrapper.GetReady)
 	})
 
 	return r
@@ -289,6 +341,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 type BadRequestJSONResponse struct {
 	Error *string `json:"error,omitempty"`
+}
+
+type GetHealthRequestObject struct {
+}
+
+type GetHealthResponseObject interface {
+	VisitGetHealthResponse(w http.ResponseWriter) error
+}
+
+type GetHealth200JSONResponse struct {
+	Status *string `json:"status,omitempty"`
+}
+
+func (response GetHealth200JSONResponse) VisitGetHealthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 type ListHotelsRequestObject struct {
@@ -350,14 +420,51 @@ func (response CreateHotel500Response) VisitCreateHotelResponse(w http.ResponseW
 	return nil
 }
 
+type GetReadyRequestObject struct {
+}
+
+type GetReadyResponseObject interface {
+	VisitGetReadyResponse(w http.ResponseWriter) error
+}
+
+type GetReady200JSONResponse struct {
+	Db     *string `json:"db,omitempty"`
+	Status *string `json:"status,omitempty"`
+}
+
+func (response GetReady200JSONResponse) VisitGetReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetReady503JSONResponse struct {
+	Db     *string `json:"db,omitempty"`
+	Status *string `json:"status,omitempty"`
+}
+
+func (response GetReady503JSONResponse) VisitGetReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Liveness check
+	// (GET /health)
+	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
 	// List hotels
 	// (GET /hotels)
 	ListHotels(ctx context.Context, request ListHotelsRequestObject) (ListHotelsResponseObject, error)
 	// Create a new hotel
 	// (POST /hotels)
 	CreateHotel(ctx context.Context, request CreateHotelRequestObject) (CreateHotelResponseObject, error)
+	// Readiness check
+	// (GET /ready)
+	GetReady(ctx context.Context, request GetReadyRequestObject) (GetReadyResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -387,6 +494,30 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetHealth operation middleware
+func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
+	var request GetHealthRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetHealth(ctx, request.(GetHealthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetHealth")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
+		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListHotels operation middleware
@@ -446,21 +577,49 @@ func (sh *strictHandler) CreateHotel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetReady operation middleware
+func (sh *strictHandler) GetReady(w http.ResponseWriter, r *http.Request) {
+	var request GetReadyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetReady(ctx, request.(GetReadyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetReady")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetReadyResponseObject); ok {
+		if err := validResponse.VisitGetReadyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"H4sIAAAAAAAC/7xVTW/cNhD9KwTbQwsIq03TAoFucQ71ogESuL0lRjBLza4YSyQ9HK27MPTfiyH3S16h",
+	"m8Bub6I4fDPzHvnmURvfBe/QcdTVow5A0CEjpdW7Bs3dwn2Un7K2Tlf6vkfa6kI76FBX2kiMdbrQ0TTY",
+	"gcStPHXAutI1MOpC8zZIaGSybq2HocjIH3q+DO17/l5sy9t/x7UsK8L73hLWumLq8TTHU8xBgmPwLmLi",
+	"5QrqG7zvMbKsjHeMLn1CCK01wNa78mv0Tv4dYQP5gMQ2gyCRp6lsh5788isazvlrjIZsEGRdSQGKdhXI",
+	"bs6RYK89Y3ueDTp0dr+wjF2cSH3IDESwlXWiairQ1iMx+t7W52LsGZ84H8ga/BKQvji7bngEtmo98BHN",
+	"9d0SSQ5FBjqt2zrGtWydc1ZkIhYu9Pzfs/H/tXm8tJ9y1mJ/nfOp85TFSbe3k3fLupWXdOM79ldjo3r7",
+	"caGgbf1DVH1Eioq9ighkGrXypBrhOBbKEAKjWnp/Z906FgpcrdbokOQ3YfDEcfbZLVjZqAIQK79SoJZg",
+	"7tDVSgAto+GeUMXGPxiIqAJ5KXL2WdyFLbdSeJJVXeVMUp8u9AYp5qLns1ezuXDoAzoIVlf69Ww+ey28",
+	"ADeJ1bJBaLmRzzXyeeM3yD25qD78oexKcYOJhUDeYIxSP/XOWbee6ZSG0nNf1LrSvyNfZ+wnhvHLfP4M",
+	"p4gM3GfP+Bu6kGjwd5Ped9E5/kTaWIPSRms3mN2j7zqgra70e7tBJ10m602bZdb4hK1xz+9t5OscUozG",
+	"x6dH/SPhSlf6h/I4ZMpjSHk06qG4HHw6i741/jBhhttnKnIwiam0O/sts/eeGce5Cm9Va2N6Azt2h0L/",
+	"miuawj9UXp5MnqfKRd6DFZphLQrshsGtGJGPE+K9S+82R2VvwchXvt5+FzcXKckuPIz9S4bucKbKq5fN",
+	"PEV+dpBsWfUJ8+OohdtAa2tlc+2F/m0qSp4TksqzfKxI5laBcviQlcnviRAyv5Pmk65tFOOBtlV7tlSN",
+	"AV2NzliM6iecrWeFqoFhCRF/VkCosqltJ03pJqV8UU+ql5f9qJh0LtoV8zzzyihJltcv2IbxzqGRo2oF",
+	"tsX6W7vq3U6AZ3fmPO+7G90nEdGOzFm20/3LbttTqyvdMIeqLFtvoG185OrN/M1cD7fDPwEAAP//eDEN",
+	"busLAAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

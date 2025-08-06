@@ -16,6 +16,7 @@ type Hotel struct {
 }
 
 type RegisterHotelInput struct {
+	ID            string
 	Name          string
 	City          string
 	Stars         int
@@ -36,7 +37,7 @@ func FromInput(input api.HotelInput) *Hotel {
 
 func ToOpenAPI(h Hotel) api.Hotel {
 	return api.Hotel{
-		Id:            utils.UUIDToPtr(h.ID),
+		Id:            utils.UUIDToOAPIPtr(h.ID),
 		Name:          utils.String(h.Name),
 		City:          utils.String(h.City),
 		Stars:         utils.Int(h.Stars),

@@ -3,25 +3,22 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Connect(ctx context.Context) (*pgxpool.Pool, error) {
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		return nil, fmt.Errorf("DATABASE_URL is not set")
-	}
-
-	pool, err := pgxpool.New(ctx, url)
+func Connect(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pgx pool: %w", err)
+		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
-
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create db pool: %w", err)
+	}
+	// Optional: immediate ping to verify connection
 	if err := pool.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
-
 	return pool, nil
 }

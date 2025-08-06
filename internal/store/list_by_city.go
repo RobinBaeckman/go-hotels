@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/robinbaeckman/go-hotels/internal/hotel"
+	"github.com/robinbaeckman/go-hotels/internal/pkg/utils"
 )
 
 func (r *PostgresStore) ListByCity(ctx context.Context, city string) ([]hotel.Hotel, error) {
@@ -16,10 +17,12 @@ func (r *PostgresStore) ListByCity(ctx context.Context, city string) ([]hotel.Ho
 	for i, h := range hotels {
 		var price float64
 		if h.PricePerNight.Valid {
-			price, _ = h.PricePerNight.Int.Float64() // second value is big.Accuracy, can be ignored
+			f, _ := h.PricePerNight.Float64Value()
+			price = f.Float64
 		}
 
 		result[i] = hotel.Hotel{
+			ID:            utils.ToUUID(h.ID),
 			Name:          h.Name,
 			City:          h.City,
 			Stars:         int(h.Stars),

@@ -7,9 +7,9 @@ import (
 	"github.com/robinbaeckman/go-hotels/internal/pkg/utils"
 )
 
-func TestUUIDToPtr(t *testing.T) {
+func UUIDToOAPIPtr(t *testing.T) {
 	id := uuid.New()
-	ptr := utils.UUIDToPtr(id)
+	ptr := utils.UUIDToOAPIPtr(id)
 
 	if ptr == nil {
 		t.Fatal("expected non-nil pointer")

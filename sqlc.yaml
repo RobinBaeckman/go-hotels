@@ -3,8 +3,6 @@ sql:
   - engine: "postgresql"
     schema: "./migrations"
     queries: "./internal/store/postgres/query"
-    database:
-      uri: "${DATABASE_URL}"
     rules:
       - sqlc/db-prepare
       - sqlc/unsafe-exec

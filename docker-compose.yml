@@ -1,7 +1,18 @@
 services:
   db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gohotels
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: gohotels
     ports:
       - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gohotels"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -11,17 +22,12 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
-      - .env.local
     environment:
       DATABASE_URL: postgres://gohotels:secret@db:5432/gohotels?sslmode=disable
       APP_ENV: local
     ports:
       - "8080:8080"
-    volumes:
-      - .:/app
-    depends_on:
-      db:
-        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
       interval: 5s

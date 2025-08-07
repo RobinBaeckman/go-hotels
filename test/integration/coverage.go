@@ -2,6 +2,8 @@ package integration
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -35,22 +37,44 @@ func LoadAllRoutesFromSpec(doc *openapi3.T) {
 }
 
 func PrintCoverageReport() {
-	fmt.Println("=== Endpoint Coverage Report ===")
+	var sb strings.Builder
 	total := 0
 	covered := 0
+
+	sb.WriteString("### 📊 Endpoint Coverage Report\n\n")
 
 	for path, methods := range allRoutes {
 		for method := range methods {
 			total++
 			if coveredRoutes[path][method] {
-				fmt.Printf("✅ %s %s\n", method, path)
+				sb.WriteString(fmt.Sprintf("✅ `%s %s`\n", method, path))
 				covered++
 			} else {
-				fmt.Printf("❌ %s %s\n", method, path)
+				sb.WriteString(fmt.Sprintf("❌ `%s %s`\n", method, path))
 			}
 		}
 	}
-	fmt.Printf("\nCovered %d/%d endpoints (%.1f%%)\n", covered, total, float64(covered)/float64(total)*100)
+
+	percentage := float64(covered) / float64(total) * 100
+	sb.WriteString(fmt.Sprintf("\n**Covered %d/%d endpoints (%.1f%%)**\n", covered, total, percentage))
+
+	fmt.Println(sb.String())
+
+	if summary := os.Getenv("GITHUB_STEP_SUMMARY"); summary != "" {
+		if !filepath.IsAbs(summary) {
+			fmt.Fprintf(os.Stderr, "⚠️ Refusing to write summary to non-absolute path: %s\n", summary)
+			return
+		}
+		f, err := os.OpenFile(summary, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304
+		if err == nil {
+			_, _ = f.WriteString(sb.String())
+			if cerr := f.Close(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "⚠️ Failed to close summary file: %v\n", cerr)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "⚠️ Failed to open summary file: %v\n", err)
+		}
+	}
 }
 
 func normalize(m string) string {

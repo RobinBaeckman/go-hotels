@@ -83,5 +83,34 @@ else
   echo "✅ Code coverage check passed"
 fi
 
-# Cleanup
-rm -f "$FILTERED_FILE"
+# Write summary to GitHub UI if in CI
+if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+  {
+    echo "### 🎯 Total Code Coverage: ${total}%"
+    echo ""
+    echo "#### 📁 Coverage per Directory:"
+    go tool cover -func="$FILTERED_FILE" | grep -vE 'total:' | awk '
+    {
+      split($1, parts, ":")
+      filepath = parts[1]
+      sub(/^github.com\/[^\/]+\/[^\/]+\//, "", filepath)
+      n = split(filepath, pathparts, "/")
+
+      dir = ""
+      for (i = 1; i < n; i++) {
+        dir = (dir == "" ? pathparts[i] : dir "/" pathparts[i])
+      }
+
+      if ($3 ~ /[0-9]+%$/) {
+        sub(/%$/, "", $3)
+        count[dir]++
+        sum[dir] += $3
+      }
+    }
+    END {
+      for (d in sum) {
+        printf "  %-40s %5.1f%%\n", d, sum[d] / count[d]
+      }
+    }' | sort
+  } >> "$GITHUB_STEP_SUMMARY"
+fi

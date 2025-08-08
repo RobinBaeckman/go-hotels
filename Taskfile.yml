@@ -129,6 +129,49 @@ tasks:
   # ---------------------
   # Testing
   # ---------------------
+  test-load:
+    desc: Run all load tests (stress + soak) and summarize
+    cmds:
+      - |
+          if [ "${CI}" != "true" ]; then
+          else
+            task migrate-up
+          fi
+      - task db-gen
+      - |
+          if [ "${CI}" = "true" ]; then
+            echo "🚀 Starting API with go run"
+            go run ./cmd/rest &
+          else
+            task api-up
+          fi
+      - echo "⏳ Waiting for API at http://localhost:8080/ready..."
+      - |
+          for i in {1..30}; do
+            if curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
+              echo "✅ API is ready!"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
+            echo "❌ API never became ready"
+            exit 1
+          fi
+      - mkdir -p test/load/results
+      - echo "Running stress GET test..."
+      - k6 run test/load/stress-get.js > test/load/results/stress-get.log
+      - echo "Running stress POST test..."
+      - k6 run test/load/stress-post.js > test/load/results/stress-post.log
+      - echo "Running soak test..."
+      - k6 run test/load/soak.js > test/load/results/soak.log
+      - echo "Summarizing results..."
+      - bash scripts/parse-load-results.sh --legend-only > test/load/summary.txt
+      - bash scripts/parse-load-results.sh test/load/results/stress-get.log "Stress GET" >> test/load/summary.txt
+      - bash scripts/parse-load-results.sh test/load/results/stress-post.log "Stress POST" >> test/load/summary.txt
+      - bash scripts/parse-load-results.sh test/load/results/soak.log "Soak Test" >> test/load/summary.txt
+      - cat test/load/summary.txt
+
   test-unit:
     desc: Run unit tests (with optional coverage check)
     cmds:

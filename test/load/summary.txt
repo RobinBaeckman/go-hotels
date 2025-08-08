@@ -1,0 +1,41 @@
+## 📊 Load Test Quality Indicators
+
+Each metric is tagged with a quality indicator:
+
+- 🟢 Excellent – Within optimal thresholds for high-performance APIs.
+- 🟡 Acceptable – Usable, but might need improvement under production load.
+- 🔴 Needs Attention – Consider investigating or optimizing this area.
+
+| Metric                | 🟢 Excellent            | 🟡 Acceptable             | 🔴 Needs Attention     |
+|-----------------------|-------------------------|---------------------------|------------------------|
+| **Throughput**        | >10,000 req/sec         | 1,000–10,000 req/sec      | <1,000 req/sec         |
+| **Avg Latency**       | <10ms                   | 10–100ms                  | >100ms                 |
+| **95th Percentile**   | <50ms                   | 50–200ms                  | >200ms                 |
+| **Failure Rate**      | 0%                      | <1%                       | ≥1%                    |
+| **Checks Passed**     | 100%                    | ≥95%                      | <95%                   |
+| **Soak Uptime**       | 100%                    | ≥99%                      | <99%                   |
+## Stress GET
+
+- 💥 Total requests: 655129
+- 🔁 Throughput: 10918.799925 reqs/sec 🟢
+- ⏱️ Avg latency: 4.54 🟢
+- 🚀 95th percentile latency: 9.38 🟢
+- ❌ Failure rate: 0.00 🟢
+- ✅ Checks passed: 100.00% 🟢
+## Stress POST
+
+- 💥 Total requests: 291120
+- 🔁 Throughput: 4851.970969 reqs/sec 🟡
+- ⏱️ Avg latency: 4.11 🟢
+- 🚀 95th percentile latency: 7.64 🟢
+- ❌ Failure rate: 0.00 🟢
+- ✅ Checks passed: 100.00% 🟢
+## Soak Test
+
+- 💥 Total requests: 600
+- 🔁 Throughput: 4.977549 reqs/sec 🔴
+- ⏱️ Avg latency: 7.24 🟢
+- 🚀 95th percentile latency: 11.27 🟡
+- ❌ Failure rate: 0.00 🟢
+- ✅ Checks passed: 100.00% 🟢
+- 🟢 Uptime: 100%

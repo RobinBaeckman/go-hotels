@@ -92,6 +92,56 @@ jobs:
       - name: Run integration tests
         run: task test-integration
 
+  load-tests:
+    name: 🔫 Load Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gohotels
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: gohotels
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U gohotels"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://gohotels:secret@localhost:5432/gohotels?sslmode=disable
+    steps:
+      - name: 🛒 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🧰 Setup Task
+        uses: arduino/setup-task@v1
+
+      - name: 🧪 Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+
+      - name: 🧪 Install k6
+        run: |
+          sudo mkdir -p /usr/share/keyrings
+          curl -s https://dl.k6.io/key.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/k6-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+      - name: ♻️ Cache Go build and bin
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/bin
+          key: ${{ runner.os }}-gobin-${{ hashFiles('**/go.sum') }}
+
+      - run: echo "${HOME}/go/bin" >> $GITHUB_PATH
+
+      - name: 🚀 Run Load Tests
+        run: task test-load
+
   security-check:
     name: 🔒 SAST Security Check
     runs-on: ubuntu-latest
@@ -159,7 +209,7 @@ jobs:
   docker-push:
     name: 🚀 Push Docker Image
     runs-on: ubuntu-latest
-    needs: [docker-scan, docker-build, security-check, integration, unit-tests, lint]
+    needs: [docker-scan, docker-build, security-check, integration, unit-tests, lint, load-tests]
     steps:
       - name: 🛒 Checkout repo
         uses: actions/checkout@v4

@@ -1,0 +1,125 @@
+services:
+  grafana:
+    image: grafana/grafana-oss:12.1.0
+    container_name: grafana
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Stick to Grafana's default provisioning path to avoid extra env overrides
+      - ./deploy/observe/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observe/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./deploy/observe/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./deploy/observe/grafana/provisioning/dashboards/slo.yaml:/etc/grafana/provisioning/dashboards/slo.yaml
+      - ./deploy/observe/grafana/dashboards:/etc/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+      - pyroscope
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    command:
+      # Explicit file + modern TSDB defaults
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver # <-- add this
+    ports: ["9090:9090"]
+    volumes:
+      - ./deploy/observe/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observe/prometheus/sli-rules.yml:/etc/prometheus/sli-rules.yml:ro
+      - ./deploy/observe/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: loki
+    command: -config.file=/etc/loki/config.yaml
+    ports: ["3100:3100"]
+    volumes:
+      - ./deploy/observe/loki/loki.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+
+  tempo:
+    image: grafana/tempo:2.8.0
+    user: "0"
+    container_name: tempo
+    command: -config.file=/etc/tempo/config.yaml
+    ports: ["3200:3200"]
+    volumes:
+      - ./deploy/observe/tempo/tempo.yaml:/etc/tempo/config.yaml:ro
+      - tempo_wal:/var/tempo/wal
+      - tempo_traces:/var/tempo/traces
+      - tempo_metrics:/var/tempo/metrics #
+
+  pyroscope:
+    image: grafana/pyroscope:1.14.0
+    container_name: pyroscope
+    ports:
+      - "4040:4040"
+    volumes:
+      - pyroscope_data:/var/lib/pyroscope
+
+  alloy:
+    image: grafana/alloy:${GRAFANA_ALLOY_VERSION:-v1.10.0}
+    container_name: alloy
+    privileged: true
+    ports:
+      - "12345:12345" # Alloy UI/debug
+      - "4317:4317" # OTLP gRPC in
+      - "4318:4318" # OTLP HTTP in
+    environment:
+      ALLOY_DEPLOY_MODE: docker
+    volumes:
+      - ./deploy/observe/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /proc:/rootproc:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /sys:/sys:ro
+      - /:/rootfs:ro
+      - /dev/disk/:/dev/disk:ro
+    command: >
+      run --server.http.listen-addr=0.0.0.0:12345
+          --storage.path=/var/lib/alloy/data
+          /etc/alloy/config.alloy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    devices:
+      - /dev/kmsg
+
+  cadvisor:
+    container_name: cadvisor
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command:
+      - --enable_metrics=cpu,memory,network,disk,process
+    ports:
+      - "8088:8080" # valfritt att exponera utåt; Prometheus kan nå via servicename
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
+
+  node-exporter:
+    container_name: node-exporter
+    image: prom/node-exporter:v1.8.2
+    pid: host
+    network_mode: host
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - "/:/host:ro,rslave"
+    restart: unless-stopped
+
+volumes:
+  grafana_data:
+  prometheus_data:
+  loki_data:
+  pyroscope_data:
+  tempo_metrics:
+  tempo_wal: {}
+  tempo_traces: {}

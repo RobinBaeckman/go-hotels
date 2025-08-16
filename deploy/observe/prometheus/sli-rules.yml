@@ -1,0 +1,194 @@
+groups:
+  # ─────────────────────────────────────────────────────────────
+  # Customer-facing SLI:er (exkluderar /ready och /health)
+  # ─────────────────────────────────────────────────────────────
+  - name: go-hotels-sli
+    interval: 30s
+    rules:
+      # ---- Trafik & RPS (5m) ----
+      - record: route_method:rps:5m
+        expr: |
+          sum by (http_route, http_request_method) (
+            rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[5m])
+          )
+
+      - record: route_method:requests_total:rate5m
+        expr: |
+          sum by (http_route, http_request_method) (
+            rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[5m])
+          )
+
+      # ---- Availability (2xx/3xx) ----
+      - record: route_method:requests_good:rate5m
+        expr: |
+          sum by (http_route, http_request_method) (
+            rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route!~"/(ready|health)"}[5m])
+          )
+
+      - record: route_method:sli_availability:ratio5m
+        expr: |
+          route_method:requests_good:rate5m
+          /
+          clamp_min(route_method:requests_total:rate5m, 1e-9)
+
+      # Längre fönster (availability)
+      - record: route_method:sli_availability:ratio30m
+        expr: |
+          (
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route!~"/(ready|health)"}[30m])
+            )
+          )
+          /
+          clamp_min(
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[30m])
+            ), 1e-9
+          )
+
+      - record: route_method:sli_availability:ratio1h
+        expr: |
+          (
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route!~"/(ready|health)"}[1h])
+            )
+          )
+          /
+          clamp_min(
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[1h])
+            ), 1e-9
+          )
+
+      - record: route_method:sli_availability:ratio6h
+        expr: |
+          (
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route!~"/(ready|health)"}[6h])
+            )
+          )
+          /
+          clamp_min(
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[6h])
+            ), 1e-9
+          )
+
+      - record: route_method:sli_availability:ratio24h
+        expr: |
+          (
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route!~"/(ready|health)"}[24h])
+            )
+          )
+          /
+          clamp_min(
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[24h])
+            ), 1e-9
+          )
+
+      # ---- Latency SLI: andel under 300ms (5m) ----
+      - record: route_method:latency_le_0_3s:rate5m
+        expr: |
+          sum by (http_route, http_request_method) (
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.3", http_route!~"/(ready|health)"}[5m])
+          )
+
+      - record: route_method:latency_all:rate5m
+        expr: |
+          sum by (http_route, http_request_method) (
+            rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf", http_route!~"/(ready|health)"}[5m])
+          )
+
+      - record: route_method:sli_latency_300ms:ratio5m
+        expr: |
+          route_method:latency_le_0_3s:rate5m
+          /
+          clamp_min(route_method:latency_all:rate5m, 1e-9)
+
+      # ---- Extra Latency SLI: andel under 500ms (5m) ----
+      - record: route_method:latency_le_0_5s:rate5m
+        expr: |
+          sum by (http_route, http_request_method) (
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.5", http_route!~"/(ready|health)"}[5m])
+          )
+
+      - record: route_method:sli_latency_500ms:ratio5m
+        expr: |
+          route_method:latency_le_0_5s:rate5m
+          /
+          clamp_min(route_method:latency_all:rate5m, 1e-9)
+
+      # ---- p95 / p99 latency (sekunder, 5m) ----
+      - record: route_method:latency_p95:seconds5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, http_route, http_request_method) (
+              rate(go_hotels_http_request_duration_seconds_bucket{http_route!~"/(ready|health)"}[5m])
+            )
+          )
+
+      - record: route_method:latency_p99:seconds5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, http_route, http_request_method) (
+              rate(go_hotels_http_request_duration_seconds_bucket{http_route!~"/(ready|health)"}[5m])
+            )
+          )
+
+      # ---- Error ratio (olika fönster) ----
+      - record: route_method:error_ratio:5m
+        expr: 1 - route_method:sli_availability:ratio5m
+      - record: route_method:error_ratio:30m
+        expr: 1 - route_method:sli_availability:ratio30m
+      - record: route_method:error_ratio:1h
+        expr: 1 - route_method:sli_availability:ratio1h
+      - record: route_method:error_ratio:6h
+        expr: 1 - route_method:sli_availability:ratio6h
+      - record: route_method:error_ratio:24h
+        expr: 1 - route_method:sli_availability:ratio24h
+
+      # ---- Service-nivå SLI (alla rutter ihop) ----
+      - record: service:sli_availability:ratio5m
+        expr: |
+          sum(rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route!~"/(ready|health)"}[5m]))
+          /
+          clamp_min(sum(rate(go_hotels_http_requests_total{http_route!~"/(ready|health)"}[5m])), 1e-9)
+
+      - record: service:sli_latency_300ms:ratio5m
+        expr: |
+          sum(rate(go_hotels_http_request_duration_seconds_bucket{le="0.3", http_route!~"/(ready|health)"}[5m]))
+          /
+          clamp_min(sum(rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf", http_route!~"/(ready|health)"}[5m])), 1e-9)
+
+      - record: service:latency_p95:seconds5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(go_hotels_http_request_duration_seconds_bucket{http_route!~"/(ready|health)"}[5m])
+            )
+          )
+
+  # ─────────────────────────────────────────────────────────────
+  # Syntetiska/tekniska endpoints (håll isär)
+  # ─────────────────────────────────────────────────────────────
+  - name: go-hotels-sli-synthetic
+    interval: 30s
+    rules:
+      - record: route_method:sli_availability:ratio5m:synthetic
+        expr: |
+          (
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3..", http_route=~"/(ready|health)"}[5m])
+            )
+          )
+          /
+          clamp_min(
+            sum by (http_route, http_request_method) (
+              rate(go_hotels_http_requests_total{http_route=~"/(ready|health)"}[5m])
+            ), 1e-9
+          )

@@ -1,5 +1,6 @@
 services:
   db:
+    container_name: db
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: gohotels
@@ -9,7 +10,7 @@ services:
       - "5432:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "gohotels"]
+      test: ["CMD-SHELL", "pg_isready -U gohotels -d gohotels"]
       interval: 3s
       timeout: 3s
       retries: 5
@@ -17,22 +18,36 @@ services:
       - db_data:/var/lib/postgresql/data
 
   api:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+    container_name: api
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      - .env
+    ports: ["8080:8080"]
     environment:
-      DATABASE_URL: postgres://gohotels:secret@db:5432/gohotels?sslmode=disable
-      APP_ENV: local
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
+      # App
+      - PORT=8080
+      - APP_ENV=local
+      - DATABASE_URL=postgres://gohotels:secret@db:5432/gohotels?sslmode=disable
+      # OpenTelemetry → Alloy (running in the other stack)
+      - OTEL_EXPORTER_OTLP_ENDPOINT=alloy:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      # Tip: your code already sets service.name/version/env via resource, so you can omit this
+      # - OTEL_RESOURCE_ATTRIBUTES=service.name=go-hotels-api,service.version=0.1.0,environment=local
+    depends_on:
+      db:
+        condition: service_healthy
+    # Healthcheck requires curl/wget inside the image; keep only if present
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 2s
       retries: 10
+      start_period: 10s
 
 volumes:
   db_data:

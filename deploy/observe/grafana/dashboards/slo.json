@@ -1,0 +1,617 @@
+{
+   "title": "Go Hotels — Golden Signals (minimal)",
+   "uid": "go-hotels-golden",
+   "timezone": "browser",
+   "schemaVersion": 39,
+   "version": 1,
+   "tags": [
+      "golden",
+      "sre",
+      "prometheus"
+   ],
+   "refresh": "10s",
+   "time": {
+      "from": "now-6h",
+      "to": "now"
+   },
+   "templating": {
+      "list": [
+         {
+            "type": "query",
+            "name": "method",
+            "label": "method",
+            "datasource": {
+               "type": "prometheus",
+               "uid": "prometheus"
+            },
+            "definition": "label_values(go_hotels_http_requests_total, http_request_method)",
+            "query": "label_values(go_hotels_http_requests_total, http_request_method)",
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true
+         },
+         {
+            "type": "query",
+            "name": "route",
+            "label": "route",
+            "datasource": {
+               "type": "prometheus",
+               "uid": "prometheus"
+            },
+            "definition": "label_values(go_hotels_http_requests_total, http_route)",
+            "query": "label_values(go_hotels_http_requests_total, http_route)",
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true
+         },
+         {
+            "type": "constant",
+            "name": "objective",
+            "label": "Availability target",
+            "query": "0.99"
+         },
+         {
+            "type": "constant",
+            "name": "latency_threshold",
+            "label": "Latency threshold (s)",
+            "query": "0.3"
+         }
+      ]
+   },
+   "panels": [
+      {
+         "type": "row",
+         "title": "Saturation (CPU & Memory)",
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+         }
+      },
+      {
+         "type": "timeseries",
+         "title": "API CPU (5m avg, % of limit or cores)",
+         "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 0
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "refId": "A",
+               "expr": "100 * ( sum(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=\"api\"}[5m])) / clamp_min(sum(container_spec_cpu_quota{container_label_com_docker_compose_service=\"api\"} / container_spec_cpu_period{container_label_com_docker_compose_service=\"api\"}), 1) )",
+               "legendFormat": "% of limit"
+            },
+            {
+               "refId": "B",
+               "expr": "sum(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=\"api\"}[5m]))",
+               "legendFormat": "cores (fallback)",
+               "hide": false
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                     {
+                        "color": "green",
+                        "value": null
+                     },
+                     {
+                        "color": "orange",
+                        "value": 70
+                     },
+                     {
+                        "color": "red",
+                        "value": 90
+                     }
+                  ]
+               }
+            },
+            "overrides": [
+               {
+                  "matcher": {
+                     "id": "byName",
+                     "options": "% of limit"
+                  },
+                  "properties": [
+                     {
+                        "id": "unit",
+                        "value": "percent"
+                     },
+                     {
+                        "id": "min",
+                        "value": 0
+                     },
+                     {
+                        "id": "max",
+                        "value": 100
+                     }
+                  ]
+               },
+               {
+                  "matcher": {
+                     "id": "byName",
+                     "options": "cores (fallback)"
+                  },
+                  "properties": [
+                     {
+                        "id": "unit",
+                        "value": "none"
+                     },
+                     {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                     }
+                  ]
+               }
+            ]
+         },
+         "options": {
+            "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "tooltip": {
+               "mode": "multi"
+            }
+         }
+      },
+      {
+         "type": "timeseries",
+         "title": "API Memory (limit %; fallback MB)",
+         "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 1
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "refId": "A",
+               "expr": "100 * ( sum(container_memory_working_set_bytes{container_label_com_docker_compose_service=\"api\"}) / sum(clamp_min(container_spec_memory_limit_bytes{container_label_com_docker_compose_service=\"api\"}, 1)) )",
+               "legendFormat": "% of limit"
+            },
+            {
+               "refId": "B",
+               "expr": "sum(container_memory_working_set_bytes{container_label_com_docker_compose_service=\"api\"}) / 1024 / 1024",
+               "legendFormat": "working set (MB)"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "percent",
+               "min": 0,
+               "max": 100,
+               "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                     {
+                        "color": "green",
+                        "value": null
+                     },
+                     {
+                        "color": "orange",
+                        "value": 80
+                     },
+                     {
+                        "color": "red",
+                        "value": 95
+                     }
+                  ]
+               }
+            },
+            "overrides": [
+               {
+                  "matcher": {
+                     "id": "byName",
+                     "options": "working set (MB)"
+                  },
+                  "properties": [
+                     {
+                        "id": "unit",
+                        "value": "megabytes"
+                     },
+                     {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                     },
+                     {
+                        "id": "custom.lineWidth",
+                        "value": 1
+                     },
+                     {
+                        "id": "custom.fillOpacity",
+                        "value": 10
+                     }
+                  ]
+               }
+            ]
+         },
+         "options": {
+            "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "tooltip": {
+               "mode": "multi"
+            }
+         }
+      },
+      {
+         "type": "row",
+         "title": "Overview (customer traffic)",
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+         }
+      },
+      {
+         "type": "stat",
+         "title": "RPS (5m)",
+         "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 1
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "sum(rate(go_hotels_http_requests_total{http_route=~\"$route\", http_request_method=~\"$method\"}[5m]))",
+               "legendFormat": "rps"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "req/s",
+               "decimals": 2
+            },
+            "overrides": []
+         },
+         "options": {
+            "reduceOptions": {
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "textMode": "value"
+         }
+      },
+      {
+         "type": "stat",
+         "title": "Availability (5m) vs target",
+         "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 1
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "max(route_method:sli_availability:ratio5m{http_route=~\"$route\", http_request_method=~\"$method\"})",
+               "legendFormat": "avail (5m)"
+            },
+            {
+               "expr": "$objective",
+               "legendFormat": "target"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "percentunit",
+               "min": 0,
+               "max": 1,
+               "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                     {
+                        "color": "red",
+                        "value": null
+                     },
+                     {
+                        "color": "green",
+                        "value": 0.99
+                     }
+                  ]
+               }
+            },
+            "overrides": []
+         },
+         "options": {
+            "reduceOptions": {
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "orientation": "horizontal",
+            "textMode": "value_and_name",
+            "colorMode": "value"
+         }
+      },
+      {
+         "type": "stat",
+         "title": "Error rate (5m)",
+         "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 1
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "max(route_method:error_ratio:5m{http_route=~\"$route\", http_request_method=~\"$method\"})",
+               "legendFormat": "error ratio (5m)"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "percentunit",
+               "min": 0,
+               "max": 1,
+               "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                     {
+                        "color": "green",
+                        "value": null
+                     },
+                     {
+                        "color": "orange",
+                        "value": 0.01
+                     },
+                     {
+                        "color": "red",
+                        "value": 0.05
+                     }
+                  ]
+               }
+            },
+            "overrides": []
+         },
+         "options": {
+            "reduceOptions": {
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "textMode": "value"
+         }
+      },
+      {
+         "type": "stat",
+         "title": "Latency compliance ≤ ${latency_threshold}s (5m)",
+         "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 1
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "max(route_method:sli_latency_300ms:ratio5m{http_route=~\"$route\", http_request_method=~\"$method\"})",
+               "legendFormat": "latency OK (5m)"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "percentunit",
+               "min": 0,
+               "max": 1,
+               "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                     {
+                        "color": "red",
+                        "value": null
+                     },
+                     {
+                        "color": "green",
+                        "value": 0.99
+                     }
+                  ]
+               }
+            },
+            "overrides": []
+         },
+         "options": {
+            "reduceOptions": {
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "textMode": "value"
+         }
+      },
+      {
+         "type": "row",
+         "title": "Latency & endpoints",
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 5
+         }
+      },
+      {
+         "type": "timeseries",
+         "title": "Latency percentiles (p50 / p95 / p99) — by route/method (5m windows)",
+         "gridPos": {
+            "h": 8,
+            "w": 16,
+            "x": 0,
+            "y": 6
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "refId": "A",
+               "expr": "histogram_quantile(0.50, sum by (le, http_route, http_request_method) (rate(go_hotels_http_request_duration_seconds_bucket{http_route=~\"$route\", http_request_method=~\"$method\"}[5m])))",
+               "legendFormat": "p50 {{http_route}} {{http_request_method}}"
+            },
+            {
+               "refId": "B",
+               "expr": "route_method:latency_p95:seconds5m{http_route=~\"$route\", http_request_method=~\"$method\"}",
+               "legendFormat": "p95 {{http_route}} {{http_request_method}}"
+            },
+            {
+               "refId": "C",
+               "expr": "route_method:latency_p99:seconds5m{http_route=~\"$route\", http_request_method=~\"$method\"}",
+               "legendFormat": "p99 {{http_route}} {{http_request_method}}"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "s",
+               "min": 0
+            },
+            "overrides": []
+         },
+         "options": {
+            "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                  "lastNotNull"
+               ]
+            },
+            "tooltip": {
+               "mode": "multi"
+            }
+         }
+      },
+      {
+         "type": "table",
+         "title": "RPS by route/method (5m)",
+         "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 6
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "topk(10, sum by (http_route, http_request_method) (rate(go_hotels_http_requests_total{http_route=~\"$route\", http_request_method=~\"$method\"}[5m])))",
+               "legendFormat": "{{http_route}} {{http_request_method}}"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "req/s",
+               "decimals": 2
+            },
+            "overrides": []
+         },
+         "options": {
+            "showHeader": true
+         }
+      },
+      {
+         "type": "row",
+         "title": "Synthetic (/ready, /health)",
+         "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 14
+         }
+      },
+      {
+         "type": "timeseries",
+         "title": "Synthetic availability (5m)",
+         "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 15
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "route_method:sli_availability:ratio5m{http_route=~\"^/(ready|health)$\", http_request_method=~\".*\"}",
+               "legendFormat": "{{http_route}} {{http_request_method}}"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "percentunit",
+               "min": 0,
+               "max": 1
+            },
+            "overrides": []
+         }
+      },
+      {
+         "type": "timeseries",
+         "title": "Synthetic latency p95 (s)",
+         "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 15
+         },
+         "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "targets": [
+            {
+               "expr": "route_method:latency_p95:seconds5m{http_route=~\"^/(ready|health)$\", http_request_method=~\".*\"}",
+               "legendFormat": "p95 {{http_route}} {{http_request_method}}"
+            }
+         ],
+         "fieldConfig": {
+            "defaults": {
+               "unit": "s"
+            },
+            "overrides": []
+         }
+      }
+   ]
+}

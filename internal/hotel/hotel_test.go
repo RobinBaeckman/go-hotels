@@ -1,8 +1,10 @@
 package hotel_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -111,7 +113,9 @@ func TestRegisterHotel(t *testing.T) {
 				store = &mockStore{}
 			}
 
-			svc := hotel.NewService(store)
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			svc := hotel.NewService(store, logger)
 			got, err := svc.RegisterHotel(context.Background(), tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("unexpected error: %v", err)
@@ -139,8 +143,9 @@ func TestSearchHotels(t *testing.T) {
 			}, nil
 		},
 	}
-
-	svc := hotel.NewService(mock)
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	svc := hotel.NewService(mock, logger)
 	got, err := svc.SearchHotels(context.Background(), "Osaka")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

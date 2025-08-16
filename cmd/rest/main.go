@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,12 +13,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/robinbaeckman/go-hotels/api"
 	"github.com/robinbaeckman/go-hotels/internal/config"
 	"github.com/robinbaeckman/go-hotels/internal/hotel"
 	"github.com/robinbaeckman/go-hotels/internal/store"
 	pg "github.com/robinbaeckman/go-hotels/internal/store/postgres"
+	"github.com/robinbaeckman/go-hotels/internal/telemetry"
 	"github.com/robinbaeckman/go-hotels/internal/transport/rest"
 )
 
@@ -31,6 +34,23 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	// Context (you can reuse this for OTEL init)
+	ctx := context.Background()
+
+	// Start OpenTelemetry (send to Alloy)
+	shutdownOTEL, err := telemetry.Setup(ctx, telemetry.Config{
+		Endpoint:       os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), // prefer env; fallback if empty
+		Insecure:       true,                                     // plaintext to Alloy in compose
+		ServiceName:    "api",
+		ServiceVersion: "0.1.0",
+		Environment:    cfg.AppEnv, // if you have it; otherwise hardcode "local"
+	})
+	if err != nil {
+		slog.Error("failed to init telemetry", "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownOTEL(context.Background()) }()
+
 	// Load OpenAPI spec
 	swagger, err := api.GetSwagger()
 	if err != nil {
@@ -39,12 +59,34 @@ func main() {
 	}
 	swagger.Servers = nil
 
-	// Router
 	router := chi.NewRouter()
+
+	// 1) OTel server instrumentation (skapar span + metrics)
+	router.Use(otelhttp.NewMiddleware(
+		"api",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			if rc := chi.RouteContext(r.Context()); rc != nil {
+				if pat := rc.RoutePattern(); pat != "" {
+					return r.Method + " " + pat
+				}
+			}
+			return r.Method + " " + r.URL.Path
+		}),
+
+		otelhttp.WithFilter(func(r *http.Request) bool {
+			p := r.URL.Path
+			return p != "/health" && p != "/ready"
+		}),
+	))
+
+	// 2) ➜ Nytt: våra egna metrics med http_route/method/status
+	router.Use(rest.HTTPMetricsMiddleware())
+
+	// 3) Logger
+	router.Use(rest.LoggerMiddleware(logger))
 	router.Use(middleware.OapiRequestValidator(swagger))
 
-	// Connect to DB for the app itself
-	ctx := context.Background()
+	// DB
 	pool, err := pg.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
@@ -55,17 +97,20 @@ func main() {
 		pool.Close()
 	}()
 
-	// Init app services
+	// Services / handlers
 	q := pg.New(pool)
 	st := store.NewPostgresStore(q)
-	svc := hotel.NewService(st)
-	handler := rest.NewHandler(svc, pool)
+	svc := hotel.NewService(st, logger)
+	handler := rest.NewHandler(svc, pool, logger)
 	api.HandlerFromMux(handler, router)
 
 	// HTTP server
 	server := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           router,
+		Addr:    ":" + cfg.Port,
+		Handler: router,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx // server ärver main's context
+		},
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		WriteTimeout:      10 * time.Second,

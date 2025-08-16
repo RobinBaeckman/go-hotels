@@ -1,0 +1,240 @@
+groups:
+  # ─────────────── Availability SLO (target 99%) ───────────────
+  - name: go-hotels-slo-availability
+    interval: 30s
+    rules:
+      # FAST BURN (page): 5m & 1h > 14.4x budget
+      # -> konsumerar ~2% av budgeten på 1h
+      - alert: SLOAvailabilityFastBurn
+        expr: |
+          (
+            (1 - route_method:sli_availability:ratio5m) / (1 - 0.99)
+          ) > 14.4
+          and
+          (
+            (
+              1 -
+              (
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3.."}[1h])
+                )
+                /
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total[1h])
+                )
+              )
+            ) / (1 - 0.99)
+          ) > 14.4
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "Fast burn availability for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "Budget burn >14.4× (5m & 1h). SLO target 99%."
+          runbook_url: https://runbooks.example/slo-availability#fast
+          dashboard: "Grafana → SLO Dashboard (Availability)"
+
+      # SLOW BURN (page or ticket): 30m & 6h > 6x budget
+      # -> konsumerar ~5% av budgeten på 6h
+      - alert: SLOAvailabilitySlowBurn
+        expr: |
+          (
+            (1 - route_method:sli_availability:ratio30m) / (1 - 0.99)
+          ) > 6
+          and
+          (
+            (
+              1 -
+              (
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3.."}[6h])
+                )
+                /
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total[6h])
+                )
+              )
+            ) / (1 - 0.99)
+          ) > 6
+        for: 15m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "Slow burn availability for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "Budget burn >6× (30m & 6h). SLO target 99%."
+          runbook_url: https://runbooks.example/slo-availability#slow
+          dashboard: "Grafana → SLO Dashboard (Availability)"
+
+      # LONG BURN (ticket): 2h & 24h > 3x budget
+      # -> konsumerar ~10% av budgeten på 24h
+      - alert: SLOAvailabilityLongBurn
+        expr: |
+          (
+            (
+              1 -
+              (
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3.."}[2h])
+                )
+                /
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total[2h])
+                )
+              )
+            ) / (1 - 0.99)
+          ) > 3
+          and
+          (
+            (
+              1 -
+              (
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total{http_response_status_code=~"2..|3.."}[24h])
+                )
+                /
+                sum by (http_route, http_request_method)(
+                  rate(go_hotels_http_requests_total[24h])
+                )
+              )
+            ) / (1 - 0.99)
+          ) > 3
+        for: 1h
+        labels:
+          severity: ticket
+          slo: availability
+        annotations:
+          summary: "Long burn availability for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "Budget burn >3× (2h & 24h). SLO target 99%."
+          runbook_url: https://runbooks.example/slo-availability#long
+          dashboard: "Grafana → SLO Dashboard (Availability)"
+
+  # ─────────────── Latency SLO (p<300ms target 99%) ───────────────
+  - name: go-hotels-slo-latency
+    interval: 30s
+    rules:
+      # Helpers: latency good-ratio över olika fönster (beräknas ad-hoc)
+      # Good = andel under 300ms
+      - record: route_method:sli_latency_300ms:ratio30m_raw
+        expr: |
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.3"}[30m])
+          )
+          /
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf"}[30m])
+          )
+
+      - record: route_method:sli_latency_300ms:ratio1h_raw
+        expr: |
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.3"}[1h])
+          )
+          /
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf"}[1h])
+          )
+
+      - record: route_method:sli_latency_300ms:ratio2h_raw
+        expr: |
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.3"}[2h])
+          )
+          /
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf"}[2h])
+          )
+
+      - record: route_method:sli_latency_300ms:ratio6h_raw
+        expr: |
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.3"}[6h])
+          )
+          /
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf"}[6h])
+          )
+
+      - record: route_method:sli_latency_300ms:ratio24h_raw
+        expr: |
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="0.3"}[24h])
+          )
+          /
+          sum by (http_route, http_request_method)(
+            rate(go_hotels_http_request_duration_seconds_bucket{le="+Inf"}[24h])
+          )
+
+      # FAST BURN latency (page): 5m & 1h > 14.4×
+      - alert: SLOLatencyFastBurn
+        expr: |
+          (
+            (1 - route_method:sli_latency_300ms:ratio5m) / (1 - 0.99)
+          ) > 14.4
+          and
+          (
+            (1 - route_method:sli_latency_300ms:ratio1h_raw) / (1 - 0.99)
+          ) > 14.4
+        for: 2m
+        labels:
+          severity: page
+          slo: latency
+        annotations:
+          summary: "Fast burn latency for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "Budget burn >14.4× (5m & 1h). Latency SLO 99% under 300ms."
+          runbook_url: https://runbooks.example/slo-latency#fast
+          dashboard: "Grafana → SLO Dashboard (Latency)"
+
+      # SLOW BURN latency (page): 30m & 6h > 6×
+      - alert: SLOLatencySlowBurn
+        expr: |
+          (
+            (1 - route_method:sli_latency_300ms:ratio30m_raw) / (1 - 0.99)
+          ) > 6
+          and
+          (
+            (1 - route_method:sli_latency_300ms:ratio6h_raw) / (1 - 0.99)
+          ) > 6
+        for: 15m
+        labels:
+          severity: page
+          slo: latency
+        annotations:
+          summary: "Slow burn latency for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "Budget burn >6× (30m & 6h). Latency SLO 99% under 300ms."
+          runbook_url: https://runbooks.example/slo-latency#slow
+          dashboard: "Grafana → SLO Dashboard (Latency)"
+
+      # LONG BURN latency (ticket): 2h & 24h > 3×
+      - alert: SLOLatencyLongBurn
+        expr: |
+          (
+            (1 - route_method:sli_latency_300ms:ratio2h_raw) / (1 - 0.99)
+          ) > 3
+          and
+          (
+            (1 - route_method:sli_latency_300ms:ratio24h_raw) / (1 - 0.99)
+          ) > 3
+        for: 1h
+        labels:
+          severity: ticket
+          slo: latency
+        annotations:
+          summary: "Long burn latency for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "Budget burn >3× (2h & 24h). Latency SLO 99% under 300ms."
+          runbook_url: https://runbooks.example/slo-latency#long
+          dashboard: "Grafana → SLO Dashboard (Latency)"
+
+  # ─────────────── Hygiene (no traffic) ───────────────
+  - name: go-hotels-slo-hygiene
+    interval: 30s
+    rules:
+      - alert: NoTrafficOnRoute
+        expr: route_method:requests_total:rate5m == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "No traffic for {{ $labels.http_route }} {{ $labels.http_request_method }}"
+          description: "No requests in the last 15m — silence other SLO alerts may be appropriate."

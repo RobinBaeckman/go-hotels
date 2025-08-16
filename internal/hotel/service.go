@@ -2,6 +2,7 @@ package hotel
 
 import (
 	"context"
+	"log/slog"
 )
 
 type StoreCreator interface {
@@ -24,8 +25,9 @@ type Service interface {
 
 type service struct {
 	store Store
+	log   *slog.Logger
 }
 
-func NewService(store Store) Service {
-	return &service{store: store}
+func NewService(store Store, log *slog.Logger) Service {
+	return &service{store: store, log: log}
 }

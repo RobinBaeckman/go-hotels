@@ -105,7 +105,7 @@ tasks:
   api-down:
     desc: Stop API service
     cmds:
-      - docker compose stop api 
+      - docker compose stop api
 
   api-log:
     desc: View logs for API container
@@ -133,31 +133,30 @@ tasks:
     desc: Run all load tests (stress + soak) and summarize
     cmds:
       - |
-          if [ "${CI}" != "true" ]; then
-          else
-            task migrate-up
-          fi
+        if [ "${CI}" != "true" ]; then
+        else
+          task migrate-up
+        fi
       - task db-gen
       - |
-          if [ "${CI}" = "true" ]; then
-            echo "🚀 Starting API with go run"
-            go run ./cmd/rest &
-          else
-            task api-up
-          fi
+        if [ "${CI}" = "true" ]; then
+          echo "🚀 Starting API with go run"
+          go run ./cmd/rest &
+        else
+        fi
       - echo "⏳ Waiting for API at http://localhost:8080/ready..."
       - |
-          for i in {1..30}; do
-            if curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
-              echo "✅ API is ready!"
-              break
-            fi
-            sleep 1
-          done
-          if ! curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
-            echo "❌ API never became ready"
-            exit 1
+        for i in {1..30}; do
+          if curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
+            echo "✅ API is ready!"
+            break
           fi
+          sleep 1
+        done
+        if ! curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
+          echo "❌ API never became ready"
+          exit 1
+        fi
       - mkdir -p test/load/results
       - echo "Running stress GET test..."
       - k6 run test/load/stress-get.js > test/load/results/stress-get.log
@@ -171,6 +170,11 @@ tasks:
       - bash scripts/parse-load-results.sh test/load/results/stress-post.log "Stress POST" >> test/load/summary.txt
       - bash scripts/parse-load-results.sh test/load/results/soak.log "Soak Test" >> test/load/summary.txt
       - cat test/load/summary.txt
+
+  synthetic-traffic:
+    desc: "Run continuous synthetic traffic (~30 rps) for 12h"
+    cmds:
+      - BASE_URL={{.BASE_URL | default "http://localhost:8080"}} k6 run test/load/synthetic-traffic.js
 
   test-unit:
     desc: Run unit tests (with optional coverage check)
@@ -187,37 +191,37 @@ tasks:
     desc: Run Go integration tests (smart for local & CI)
     cmds:
       - |
-          if [ "${CI}" != "true" ]; then
-            task all-down
-            task all-up
-          else
-            task migrate-up
-          fi
+        if [ "${CI}" != "true" ]; then
+          task all-down
+          task all-up
+        else
+          task migrate-up
+        fi
       - task db-gen
       - |
-          if [ "${CI}" = "true" ]; then
-            echo "🚀 Starting API with go run"
-            go run ./cmd/rest &
-          else
-            task api-up
-          fi
+        if [ "${CI}" = "true" ]; then
+          echo "🚀 Starting API with go run"
+          go run ./cmd/rest &
+        else
+          task api-up
+        fi
       - echo "⏳ Waiting for API at http://localhost:8080/ready..."
       - |
-          for i in {1..30}; do
-            if curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
-              echo "✅ API is ready!"
-              exit 0
-            fi
-            sleep 1
-          done
+        for i in {1..30}; do
+          if curl --fail http://localhost:8080/ready > /dev/null 2>&1; then
+            echo "✅ API is ready!"
+            exit 0
+          fi
+          sleep 1
+        done
 
-          echo "❌ API never became ready"
-          exit 1    - echo "🚀 Running Go integration tests"
+        echo "❌ API never became ready"
+        exit 1    - echo "🚀 Running Go integration tests"
       - go test -tags=integration ./test/integration/... -v
       - |
-          if [ "${CI}" != "true" ]; then
-            task all-down
-          fi
+        if [ "${CI}" != "true" ]; then
+          task all-down
+        fi
 
   test-all:
     desc: Run all tests (unit + integration + coverage)
@@ -276,8 +280,37 @@ tasks:
       - docker run --rm -v $PWD:/repo zricethezav/gitleaks detect --source=/repo
 
   # ---------------------
+  # Observability
+  # ---------------------
+  observe-up:
+    desk: Enables docker compose observability stack
+    cmds:
+      - docker compose -f docker-compose.yml -f deploy/observe/docker-compose.yml up -d --build
+
+  observe-down:
+    desk: Enables docker compose observability stack
+    cmds:
+      - docker compose -f docker-compose.yml -f deploy/observe/docker-compose.yml down -v
+
+  # ---------------------
   # Misc
   # ---------------------
+  hotel-create:
+    desc: Create a new hotel via API
+    cmds:
+      - |
+        http POST :8080/hotels \
+          name="Hotel Aurora" \
+          city="Stockholm" \
+          stars:=5 \
+          price_per_night:=199.0 \
+          amenities:='["wifi","spa","breakfast"]'
+
+  hotel-list:
+    desc: List hotels in a city (optional dates)
+    cmds:
+      - http GET :8080/hotels city==Stockholm checkin==2025-08-15 checkout==2025-08-18
+
   kill-port:
     desc: Kill process on given port
     cmds:
@@ -333,3 +366,21 @@ tasks:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
         fi
+  sniff-http2:
+    desc: "Capture HTTP (port 8080) traffic live using tcpdump"
+    cmds:
+      - |
+        echo "Starting tcpdump on port 8080 (press Ctrl+C to stop)"
+        sudo tcpdump -i lo0 -s 0 -A 'tcp port 8080'
+
+  sniff-http:
+    desc: "Sniff HTTP traffic on port 8080 with termshark"
+    cmds:
+      - echo "Starting termshark on lo0 for port 8080 (press q to quit)"
+      - sudo termshark -i lo0 -f "tcp port 8080"
+
+  sniff-http3:
+    desc: "Sniff HTTP traffic on port 8080 with termshark"
+    cmds:
+      - echo "Starting tshark on lo0 for port 8080 (press q to quit)"
+      - sudo tshark -i lo0 -f "tcp port 8080" -O http -P

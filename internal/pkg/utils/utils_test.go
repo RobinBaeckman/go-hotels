@@ -4,18 +4,45 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/robinbaeckman/go-hotels/internal/pkg/utils"
 )
 
-func UUIDToOAPIPtr(t *testing.T) {
+func TestUUIDToOAPIPtr(t *testing.T) {
 	id := uuid.New()
 	ptr := utils.UUIDToOAPIPtr(id)
 
 	if ptr == nil {
 		t.Fatal("expected non-nil pointer")
 	}
-	if *ptr != id {
-		t.Errorf("expected %v, got %v", id, *ptr)
+	// ptr är *types.UUID — jämför genom att casta till uuid.UUID
+	got := uuid.UUID(*ptr)
+	if got != id {
+		t.Errorf("expected %v, got %v", id, got)
+	}
+}
+
+func TestToUUID_Valid(t *testing.T) {
+	id := uuid.New()
+	var bytes [16]byte
+	copy(bytes[:], id[:])
+
+	u := pgtype.UUID{
+		Bytes: bytes,
+		Valid: true,
+	}
+	got := utils.ToUUID(u)
+	if got != id {
+		t.Errorf("expected %v, got %v", id, got)
+	}
+}
+
+func TestToUUID_Invalid(t *testing.T) {
+	u := pgtype.UUID{Valid: false}
+	got := utils.ToUUID(u)
+	if got != (uuid.UUID{}) {
+		t.Errorf("expected zero UUID, got %v", got)
 	}
 }
 
@@ -27,7 +54,6 @@ func TestPtr_Generic(t *testing.T) {
 			t.Errorf("expected %v, got %v", x, ptr)
 		}
 	})
-
 	t.Run("string", func(t *testing.T) {
 		s := "hello"
 		ptr := utils.Ptr(s)

@@ -4,21 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/robinbaeckman/go-hotels/internal/hotel"
 )
 
-type Handler struct {
-	svc hotel.Service
-	db  *pgxpool.Pool
+type Pinger interface {
+	Ping(ctx context.Context) error
 }
 
-func NewHandler(svc hotel.Service, db *pgxpool.Pool) *Handler {
-	return &Handler{svc: svc, db: db}
+type Handler struct {
+	svc hotel.Service
+	log *slog.Logger
+	db  Pinger
+}
+
+func NewHandler(svc hotel.Service, db Pinger, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, db: db, log: log}
 }
 
 func (h *Handler) GetHealth(w http.ResponseWriter, r *http.Request) {

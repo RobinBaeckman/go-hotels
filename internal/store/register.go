@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/robinbaeckman/go-hotels/internal/hotel"
 	pg "github.com/robinbaeckman/go-hotels/internal/store/postgres"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // safeIntToInt32 ensures the value is within int32 bounds before casting.
@@ -20,7 +20,7 @@ func safeIntToInt32(v int) (int32, error) {
 }
 
 func (r *PostgresStore) Register(ctx context.Context, h *hotel.Hotel) error {
-	// Validate stars to prevent invalid hotel data
+	// basic validation only; tracing handled in domain + pgxotel
 	if h.Stars < 0 || h.Stars > 5 {
 		return fmt.Errorf("invalid star rating: %d", h.Stars)
 	}
@@ -30,9 +30,8 @@ func (r *PostgresStore) Register(ctx context.Context, h *hotel.Hotel) error {
 		return err
 	}
 
-	// Convert float to pgtype.Numeric
 	var price pgtype.Numeric
-	if err := price.Scan(fmt.Sprintf("%f", h.PricePerNight)); err != nil {
+	if err = price.Scan(fmt.Sprintf("%f", h.PricePerNight)); err != nil {
 		return fmt.Errorf("failed to convert price: %w", err)
 	}
 

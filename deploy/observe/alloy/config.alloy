@@ -1,0 +1,118 @@
+// ──────────────────────────────────────────────────────────────
+// OTLP in  →  Prometheus (metrics), Loki (logs), Tempo (traces)
+// ──────────────────────────────────────────────────────────────
+
+// 1) Accept OTLP from your apps on 4317/4318
+otelcol.receiver.otlp "in" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    // Skicka allt först till batch-processorn
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+// (NY) Batch processor: buffrar/batchar och skickar vidare
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.to_prom.input]
+    logs    = [otelcol.exporter.loki.to_loki.input]
+    traces  = [otelcol.exporter.otlp.to_tempo.input]
+  }
+}
+// 2) Metrics path: OTLP → prometheus exporter → Prometheus remote_write
+otelcol.exporter.prometheus "to_prom" {
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// 3) Logs path: OTLP → loki exporter → Loki
+otelcol.exporter.loki "to_loki" {
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    // Full push-URL vid skrivning till Loki
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// 4) Traces path: OTLP → OTLP exporter → Tempo
+otelcol.exporter.otlp "to_tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// 5) Container logs → Loki via Docker API (Colima-friendly)
+
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker" {
+  targets = discovery.docker.local.targets
+
+  rule {
+    action        = "replace"
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+  }
+
+  rule {
+    action        = "replace"
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container_name"
+  }
+}
+
+loki.source.docker "local" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.local.targets
+  labels        = { job = "docker" }
+  relabel_rules = discovery.relabel.docker.rules
+  forward_to    = [loki.process.docker.receiver]
+}
+
+loki.process "docker" {
+  // Parse JSON log line and extract fields
+  stage.json {
+    expressions = {
+      trace_id     = "trace_id",
+      span_id      = "span_id",
+      level        = "level",
+      service_name = "service_name",
+      msg          = "msg",
+    }
+    drop_malformed = true
+  }
+
+  // Promote selected fields to labels (so Grafana can link to traces)
+  stage.labels {
+    values = {
+      trace_id     = "trace_id",
+      span_id      = "span_id",
+      level        = "level",
+      service_name = "service_name",
+    }
+  }
+
+  // No stage.output needed—leaves the original log line as-is
+  forward_to = [loki.write.local.receiver]
+}

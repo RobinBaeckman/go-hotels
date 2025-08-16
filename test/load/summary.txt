@@ -16,26 +16,9 @@ Each metric is tagged with a quality indicator:
 | **Soak Uptime**       | 100%                    | ≥99%                      | <99%                   |
 ## Stress GET
 
-- 💥 Total requests: 655129
-- 🔁 Throughput: 10918.799925 reqs/sec 🟢
-- ⏱️ Avg latency: 4.54 🟢
-- 🚀 95th percentile latency: 9.38 🟢
+- 💥 Total requests: 91953
+- 🔁 Throughput: 6129.968287 reqs/sec 🟡
+- ⏱️ Avg latency: 8.13 🟢
+- 🚀 95th percentile latency: 18.59 🟡
 - ❌ Failure rate: 0.00 🟢
 - ✅ Checks passed: 100.00% 🟢
-## Stress POST
-
-- 💥 Total requests: 291120
-- 🔁 Throughput: 4851.970969 reqs/sec 🟡
-- ⏱️ Avg latency: 4.11 🟢
-- 🚀 95th percentile latency: 7.64 🟢
-- ❌ Failure rate: 0.00 🟢
-- ✅ Checks passed: 100.00% 🟢
-## Soak Test
-
-- 💥 Total requests: 600
-- 🔁 Throughput: 4.977549 reqs/sec 🔴
-- ⏱️ Avg latency: 7.24 🟢
-- 🚀 95th percentile latency: 11.27 🟡
-- ❌ Failure rate: 0.00 🟢
-- ✅ Checks passed: 100.00% 🟢
-- 🟢 Uptime: 100%
